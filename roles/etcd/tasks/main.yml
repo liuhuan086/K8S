@@ -1,0 +1,66 @@
+---
+- name: 创建目录
+  shell: mkdir -p /opt/src
+
+- name: 添加etcd用户
+  shell: useradd -s /sbin/nologin -M etcd
+  ignore_errors: yes
+
+- name: 下载etcd
+  copy:
+    src: ../../../src/etcd-v3.1.20-linux-amd64.tar.gz
+    dest: /opt/src/etcd-v3.1.20-linux-amd64.tar.gz
+    mode: 0644
+
+- name: 解压etcd
+  shell: tar -zxvf /opt/src/etcd-v3.1.20-linux-amd64.tar.gz -C /opt
+
+- name: 重命名ectd
+  shell:
+    cmd: mv etcd-v3.1.20-linux-amd64 etcd-v3.1.20
+    chdir: /opt
+
+- name: 做软链接，方便以后升级
+  shell: ln -s /opt/etcd-v3.1.20 /opt/etcd
+
+- name: 创建etcd相关目录
+  shell: mkdir -p /opt/etcd/certs /data/etcd /data/logs/etcd-server
+
+- name: 从200机器上复制etcd证书文件
+  shell: sshpass -p '{{ password }}' scp -oStrictHostKeyChecking=no root@hdss7-200:/opt/certs/"{{ item }}" /opt/etcd/certs
+  with_items:
+    - etcd*.pem
+    - ca.pem
+
+- name: 创建etcd启动脚本
+  template:
+    src: etcd-server-startup.sh.j2
+    dest: /opt/etcd/etcd-server-startup.sh
+    mode: 0755
+
+- name: 更改/opt/etcd-v3.1.20目录所属用户组为etcd
+  shell: chown -R etcd.etcd /opt/etcd-v3.1.20/
+
+- name: 更改/data/etcd和/data/logs/etcd-server/ 所属用户组为etcd
+  shell: chown -R etcd.etcd /data/etcd && chown -R etcd.etcd /data/logs/etcd-server/
+
+- name: 下载supervisor
+  shell: yum install -y supervisor
+
+- name: 启动supervisor并设置开机自启动
+  shell: systemctl start supervisord && systemctl enable supervisord
+
+- name: 创建etcd-server的启动配置
+  template:
+    src: etcd-server.ini.j2
+    dest: /etc/supervisord.d/etcd-server.ini
+    mode: 0644
+
+- name: 创建etcd软链接
+  shell: ln -s /opt/etcd/etcdctl /usr/bin/etcdctl
+
+- name: 执行supervisorctl update命令，启动etcd服务
+  shell: supervisorctl update
+
+- name: 等待etcd服务启动，视硬件而定，固态硬盘会快一点，机械硬盘就比较慢
+  pause: seconds=30

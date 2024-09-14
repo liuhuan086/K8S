@@ -1,0 +1,4 @@
+.idea
+packages/opt/src
+!packages/opt/src/.gitkeep
+*.pyc

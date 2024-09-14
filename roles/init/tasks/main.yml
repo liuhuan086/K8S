@@ -1,0 +1,126 @@
+---
+- name: copy rsa.pub
+  authorized_key: user=root key="{{ lookup('file', '{{ root_path }}/.ssh/id_rsa.pub') }}"
+  tags:
+    - sshkey
+  ignore_errors: yes
+
+##    - name: fetch copy # 将其它机器公钥拷贝到本机
+##      fetch: src=/root/.ssh/id_rsa.pub dest=/Users/liuhuan/Documents/Ansible/K8S/ssh
+##
+##    - name: append file authorized_keys.log # 公钥拼接成一个文件
+##      shell: find /Users/liuhuan/Documents/Ansible/K8S/ssh/* -type f -exec sh -c 'cat {}>>/Users/liuhuan/Documents/Ansible/K8S/ssh/authorized_keys.log' \;
+##      run_once: true
+##
+##    - name: copy hosts # 将处理好的公钥分发给各个机器上
+##      copy: src=./ssh/authorized_keys.log dest=/root/.ssh/authorized_keys mode=0600
+
+- name: disable selinux
+  template:
+    src: config.j2
+    dest: /etc/selinux/config
+    mode: 0644
+
+- name: stop firewalld
+  shell: systemctl stop firewalld && systemctl disable firewalld
+
+- name: 关闭swap
+  shell: swapoff -a
+
+- name: 关闭swap,修改/etc/fstab文件
+  shell: sed -i '/swap/s/^/#/' /etc/fstab
+
+- name: 设置时区为上海
+  shell: timedatectl set-timezone Asia/Shanghai
+
+- name: 清除原有的yum源
+  shell: mv /etc/yum.repos.d/CentOS-Base.repo /etc/yum.repos.d/CentOS-Base.repo.bak
+
+- name: install epal
+  shell: wget -O /etc/yum.repos.d/CentOS-Base.repo http://mirrors.aliyun.com/repo/Centos-7.repo
+
+- name: 清除yum缓存
+  shell: yum clean all
+
+- name: 构建yum缓存
+  shell: yum makecache
+
+- name: 下载ntpdate
+  shell: yum -y install ntpdate
+  ignore_errors: yes
+
+- name: 时间同步
+  shell: "{{ item }}"
+  with_items:
+    - ntpdate ntp1.aliyun.com
+    - ntpdate ntp1.aliyun.com
+  ignore_errors: yes
+
+- name: 设置ntp开机自启动
+  shell: systemctl start ntpdate && systemctl enable ntpdate
+  ignore_errors: yes
+
+- name: install tools
+  shell: yum install -y sshpass wget net-tools telnet tree nmap sysstat lrzsz dos2unix bind-utils vim
+
+## 主机和业务需要分开，但是主机上又跑了业务
+## 因此需要设置主机域和业务域，能够将其关联起来
+## 后期维护时，如果业务变更（从跑mysql服务变成跑redis服务，没有任何影响）
+- name: set host name
+  hostname:
+    name: "hdss7-{{ ansible_default_ipv4.address.split('.')[-1] }}.host.com"
+
+- name: install bind, 用来自建DNS
+  shell: yum -y install bind
+  when: inventory_hostname == 'hdss7-11'
+
+- name: 上传named conf等文件到/etc目录下
+  template:
+    src: '{{ item }}.j2'
+    dest: /etc/{{ item }}
+    mode: 0644
+  with_items:
+    - named.rfc1912.zones
+    - named.conf
+  when: inventory_hostname == 'hdss7-11'
+
+- name: 上传zone文件到/vars/named/
+  template:
+    src: '{{ item }}.j2'
+    dest: /var/named/{{ item }}
+    mode: 0644
+  with_items:
+    - od.com.zone
+    - host.com.zone
+  when: inventory_hostname == 'hdss7-11'
+
+- name: check named server
+  shell: named-checkconf
+  when: inventory_hostname == 'hdss7-11'
+
+- name: 修改网卡的DNS为7-11的IP（自建的DNS）
+  lineinfile:
+    dest: /etc/sysconfig/network-scripts/ifcfg-eth0
+    regexp: '^{{ item.name }}'
+    line: '{{ item.value }}'
+  with_items:
+    - { name: 'DNS1', value: 'DNS1={{ node11 }}' }
+    - { name: 'DNS2', value: 'DNS2=223.5.5.5' }
+
+- name: 启动named服务并设置为开机自启动
+  shell: systemctl start named && systemctl enable named
+  when: inventory_hostname == 'hdss7-11'
+
+- name: 重启network
+  shell: systemctl restart network
+  when: inventory_hostname == 'hdss7-11'
+
+- name: check dig record
+  shell: dig -t A hdss7-21.host.com @"{{ node11 }}" +short
+  register: std_out
+
+- name: 查看check dig record输出结果
+  debug: msg={{ std_out.stdout_lines }}
+
+- name: 重启机器
+  shell: reboot

@@ -1,0 +1,40 @@
+image:
+  repository: registry.cn-zhangjiakou.aliyuncs.com/sec-gdc/kong  # 更换成tip的kong
+  tag: 1.5.7
+  pullPolicy: IfNotPresent
+  pullSecrets:
+    - tip-pull-secret  # 拉取镜像的secret
+
+# 会自动在变量名前加上 KONG_
+env:
+  database: postgres  # 修改原有配置
+  PG_DATABASE: tip_kong  # 从这开始的环境变量都复制过去
+  PG_HOST: pgsql.db
+  PG_PASSWORD: kong
+  PG_USER: tip_kong
+  AUTH_COOKIE_DOMAIN: .sec-test.gwm.com.cn
+  AUTH_COOKIE_KEY: dev_access_token
+  AUTH_IAM_HOST: http://iam-svc.tip-test:8000/
+  AUTH_JWT_KEY: 7J8-ZNyD1JGMd6Q48y2yQW_VUIK15unRInksS4zU2EM
+  AUTH_RISK_CHECK:
+  AUTH_WEBSITE: http://iov.sec-test.gwm.com.cn/
+  LOG_LEVEL: debug
+  # 获取真实ip
+  REAL_IP_HEADER: X-Forwarded-For
+  TRUSTED_IPS: 0.0.0.0/0,::/0
+  # nginx内置变量固定，log中只能记录nginx变量，如下自定义变量
+  # NGINX_PROXY_SET: \$tip_userid '';set \$tip_server '';set \$tip_roles ''
+  JWT_KEY: _cy8ctd38lNxbnW5x-hJbL8kmMmryXnZzgRDFk7xwkk
+  # 配置插件， 由于values会覆盖容器中的环境变量， 所以这里需要重新设置，才能挂在上插件
+  LUA_PACKAGE_PATH: /home/kong/?.lua
+  PLUGINS: bundled,tip-auth,report-log,report-log-console,gsg-waf,tip-auth2
+  AUTH_IDM_HOST: http://idm-svc.tip-test:8000/
+  AUTH_IAM_V2_HOST: http://iam-svc.tip-test:8000/
+  IAM_ENFORCE_HOST: http://iam-enforce-svc.tip-test:8000/
+proxy:
+  type: NodePort  # 默认是LoadBalancer
+
+admin:
+  enabled: true  # 改为true
+  http:
+    enabled: true # 改为true

@@ -1,0 +1,43 @@
+---
+#- hosts: '200'
+
+- name: 下载harbor
+  copy: src=../../../src/harbor-offline-installer-v2.2.2.tgz dest=/opt mode=0644
+
+- name: 解压
+  shell: tar xf /opt/harbor-offline-installer-v2.2.2.tgz -C /opt/
+
+- name: 重命名harbor目录名
+  shell:
+    cmd: mv harbor/ harbor-v2.2.2
+    chdir: /opt
+
+- name: 设置harbor软连接
+  shell: ln -s /opt/harbor-v2.2.2 /opt/harbor
+
+- name: 复制harbor.yml
+  template:
+    src: harbor.yml.j2
+    dest: /opt/harbor/harbor.yml
+    mode: 0644
+
+- name: 创建相应目录
+  shell: mkdir -p /data/harbor/logs
+
+- name: harbor依赖于docker-compose，因此需要安装docker-compose
+  shell: yum install docker-compose -y
+
+- name: 执行harbor目录下的install.sh安装脚本
+  shell: sh /opt/harbor/helm.sh
+
+- name: yum安装nginx
+  shell: yum install nginx -y
+
+- name: 设置nginx代理
+  template:
+    src: harbor.od.com.conf.j2
+    dest: /etc/nginx/conf.d/harbor.od.com.conf
+    mode: 0644
+
+- name: 启动nginx并设置开机自启
+  shell: systemctl start nginx && systemctl enable nginx

@@ -1,0 +1,12 @@
+---
+- name: yum安装java
+  shell: yum install -y java-1.8.0-openjdk
+
+- name: 查看Java版本
+  shell: java -version
+  register: std_out
+  ignore_errors: yes
+
+- name: 查看Java版本输出结果
+  debug: msg={{ std_out.stdout_lines }}
+  ignore_errors: yes
